@@ -9,8 +9,10 @@ from aiogram.types import CallbackQuery
 from aiogram_calendar import get_user_locale, SimpleCalendarCallback, SimpleCalendar
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.keyboards import main_kb, DebtorsCallbackFactory, debtor_kb, add_loan_confirm_kb
-from bot.utils.db import add_debtor, get_loans, add_loan
+from bot.keyboards import main_kb, DebtorsCallbackFactory, debtor_kb, add_loan_confirm_kb, add_debtor_kb, \
+    forgive_loan_confirm_kb, delete_debtor_confirm_kb
+from bot.utils.db import add_debtor, get_loans, add_loan, get_debtor, subtract_from_debt, get_debtors, \
+    get_user_all_loans, forgive_all_debts, delete_debtor
 from bot.utils.utils import get_current_add_loan_state_data, convert_date
 from tabulate import tabulate
 
@@ -30,6 +32,69 @@ class DebtorAddLoanState(StatesGroup):
     loan_submit = State()
 
 
+class DebtorRemoveLoanState(StatesGroup):
+    enter_remove_amount = State()
+    confirm_remove_amount = State()
+
+
+class DebtorForgiveLoanState(StatesGroup):
+    confirm_forgive_amount = State()
+
+
+@router.callback_query(F.data.startswith("debtorBackToMain"))
+async def back_to_main_callback_edit_text(callback: CallbackQuery, session: AsyncSession):
+    global total_debt
+    telegram_id = callback.from_user.id
+    loans = await get_user_all_loans(telegram_id=telegram_id, session=session)
+    debtors = await get_debtors(creditor_id=telegram_id, session=session)
+
+    if loans not in [None, 0, []]:
+        total_debt = sum(loan.amount_of_debt for loan in loans)
+
+    if debtors == 401:
+        await callback.answer("Вы не зарегистрированы. Используйте команду /start, чтобы начать пользоваться ботом")
+        return
+
+    debtors_list = [{"name": d.full_name, "id": d.id} for d in debtors]
+    if len(debtors) == 0:
+        await callback.message.edit_text("Пока у вас нет должников. Хотите добавить первого?", reply_markup=add_debtor_kb(debtors_list))
+        return
+    elif len(debtors) != 0:
+        await callback.message.edit_text(f"Общая сумма ваших денег у других людей: <b>{total_debt}</b>\n\n"
+                                         f"Вот ваши должники:", reply_markup=add_debtor_kb(debtors_list))
+        return
+    else:
+        await callback.answer("Ошибка")
+        return
+
+
+@router.callback_query(F.data.startswith("debtorBackToMainCallbackEditText"))
+async def back_to_main_callback_answer(callback: CallbackQuery, session: AsyncSession):
+    global total_debt
+    telegram_id = callback.from_user.id
+    loans = await get_user_all_loans(telegram_id=telegram_id, session=session)
+    debtors = await get_debtors(creditor_id=telegram_id, session=session)
+
+    if loans not in [None, 0, []]:
+        total_debt = sum(loan.amount_of_debt for loan in loans)
+
+    if debtors == 401:
+        await callback.answer("Вы не зарегистрированы. Используйте команду /start, чтобы начать пользоваться ботом")
+        return
+
+    debtors_list = [{"name": d.full_name, "id": d.id} for d in debtors]
+    if len(debtors) == 0:
+        await callback.message.answer("Пока у вас нет должников. Хотите добавить первого?", reply_markup=add_debtor_kb(debtors_list))
+        return
+    elif len(debtors) != 0:
+        await callback.message.answer(f"Общая сумма ваших денег у других людей: <b>{total_debt}</b>\n\n"
+                                      f"Вот ваши должники:", reply_markup=add_debtor_kb(debtors_list))
+        return
+    else:
+        await callback.answer("Ошибка")
+        return
+
+
 @router.callback_query(StateFilter(None), F.data.startswith("debtor_add"))
 async def callback_debtor_add(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
 
@@ -47,7 +112,9 @@ async def callback_debtor_add(callback: CallbackQuery, state: FSMContext, sessio
 
     if new_debtor == 201:
         await callback.message.answer("Должник записан😈", reply_markup=main_kb())
+        await callback.message.delete()
         await state.clear()
+
     else:
         await callback.message.answer("Ошибка", reply_markup=main_kb())
 
@@ -62,21 +129,26 @@ async def callback_debtor_rewrite(callback: CallbackQuery, state: FSMContext):
 async def callbacks_debtor_change(callback: CallbackQuery, callback_data: DebtorsCallbackFactory, session: AsyncSession):
     loans = await get_loans(debtor_id=callback_data.id, session=session)
 
-    if loans is None:
-        loans_answer = "Вам ничего не должен этот человек🎉"
-        total_debt = 0
-    else:
-        total_debt = sum(loan.amount_of_debt for loan in loans)
-        loans_answer = "\n".join([f"Долг💸: <b>{loan.amount_of_debt}</b>\n"
-                                  f"Причина📋: <b>{loan.subject_of_debt}</b>\n"
-                                  f"Дата займа📅: <b>{convert_date(loan.date_of_loan)}</b>\n"
-                                  f"Дата возврата⏰: <b>{convert_date(loan.end_date_of_loan)}</b>\n"
-                                  for loan in loans])
+    if loans is None or all(loan.amount_of_debt == 0 for loan in loans):
+        await callback.message.edit_text(f"<b>{callback_data.name}</b>\n\n"
+                                         f"Вам ничего не должен этот человек🎉",
+                                         reply_markup=debtor_kb(None, callback_data.id))
+        return
+
+    # Фильтруем долги, оставляем только те, у которых amount_of_debt > 0
+    filtered_loans = [loan for loan in loans if loan.amount_of_debt > 0]
+
+    total_debt = sum(loan.amount_of_debt for loan in filtered_loans)
+    loans_answer = "\n".join([f"Долг💸: <b>{loan.amount_of_debt}</b>\n"
+                              f"Причина📋: <b>{loan.subject_of_debt}</b>\n"
+                              f"Дата займа📅: <b>{convert_date(loan.date_of_loan)}</b>\n"
+                              f"Дата возврата⏰: <b>{convert_date(loan.end_date_of_loan)}</b>\n"
+                              for loan in filtered_loans])
 
     await callback.message.edit_text(f"<b>{callback_data.name}</b>\n"
                                      f"Общая сумма💰: <b>{total_debt}</b>\n\n"
                                      f"{loans_answer}",
-                                     reply_markup=debtor_kb(loans, callback_data.id))
+                                     reply_markup=debtor_kb(filtered_loans, callback_data.id))
 
 
 @router.callback_query(F.data.startswith("debtorAddLoan_"))
@@ -142,6 +214,7 @@ async def callback_add_loan_confirm(callback: CallbackQuery, state: FSMContext, 
 
         if new_loan == 201:
             await callback.message.answer("Новый долг записан✍", reply_markup=main_kb())
+            await callback.message.delete()
             await state.clear()
         else:
             await callback.message.answer("Ошибка", reply_markup=main_kb())
@@ -154,5 +227,94 @@ async def callback_add_loan_confirm(callback: CallbackQuery, state: FSMContext):
     await callback.message.delete()
 
 
+@router.callback_query(F.data.startswith("debtorRemoveLoan_"))
+async def callback_add_loan(callback: CallbackQuery, state: FSMContext):
+    await state.update_data(debtor_id=callback.data.split('_')[1])
+    await callback.message.edit_text(text="Введите, сколько вычесть из общего долга: ")
+    await state.set_state(DebtorRemoveLoanState.enter_remove_amount)
 
+
+@router.callback_query(F.data.startswith("debtorRemoveLoanConfirm"))
+async def callback_remove_loan(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    current_state = await state.get_state()
+    state_data = await state.get_data()
+    if current_state == DebtorRemoveLoanState.confirm_remove_amount:
+        subtract = await subtract_from_debt(debtor_id=int(state_data["debtor_id"]),
+                                            amount_to_subtract=int(state_data["amount_to_subtract"]),
+                                            session=session)
+        if subtract == 200:
+            await callback.message.answer(f"<b>{state_data['amount_to_subtract']} успешно вычтено из долга👌</b>",
+                                          reply_markup=main_kb())
+            await callback.message.delete()
+            await state.clear()
+            return
+        else:
+            await callback.message.answer("Ошибка", reply_markup=main_kb())
+            await state.clear()
+            return
+    else:
+        await callback.message.answer("В начале введите вычитаемую из долга сумму: ")
+        await state.set_state(DebtorRemoveLoanState.enter_remove_amount)
+        return
+
+
+@router.callback_query(F.data.startswith("debtorRemoveLoanRewrite"))
+async def callback_remove_loan(callback: CallbackQuery, state: FSMContext):
+    await callback.message.answer("Давайте перепишем. Введите вычитаемую сумму: ")
+    await state.set_state(DebtorRemoveLoanState.enter_remove_amount)
+    await callback.message.delete()
+
+
+@router.callback_query(F.data.startswith("debtorForgiveLoan_"))
+async def callback_add_loan(callback: CallbackQuery, state: FSMContext):
+    await state.update_data(debtor_id=callback.data.split('_')[1])
+    await callback.message.edit_text(text="Вы уверены, что хотите простить этому человеку все долги?😐",
+                                     reply_markup=forgive_loan_confirm_kb())
+    await state.set_state(DebtorForgiveLoanState.confirm_forgive_amount)
+
+
+@router.callback_query(F.data.startswith("debtorForgiveLoanConfirm"))
+async def callback_add_loan_confirm(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    state_data = await state.get_data()
+
+    forgive_debts = await forgive_all_debts(int(state_data["debtor_id"]), session)
+    if forgive_debts == 200:
+        await callback.message.answer("Долги списаны🔥", reply_markup=main_kb())
+        await callback.message.delete()
+    await state.clear()
+
+
+@router.callback_query(F.data.startswith("debtorForgiveLoanNo"))
+async def callback_add_loan_confirm(callback: CallbackQuery, state: FSMContext):
+
+    await callback.message.answer("Не смогли простить, да?😔", reply_markup=main_kb())
+    await callback.message.delete()
+    await state.clear()
+
+
+@router.callback_query(F.data.startswith("debtorRemoveDebtor_"))
+async def callback_add_loan(callback: CallbackQuery, state: FSMContext):
+    await state.update_data(debtor_id=callback.data.split('_')[1])
+    await callback.message.edit_text(text="Вы уверены, что хотите удалить этого должника?🙄 \nВдруг еще пригодится?",
+                                     reply_markup=delete_debtor_confirm_kb())
+    await state.set_state(DebtorForgiveLoanState.confirm_forgive_amount)
+
+
+@router.callback_query(F.data.startswith("debtorDeleteConfirm"))
+async def callback_add_loan_confirm(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    state_data = await state.get_data()
+
+    deleted_debtor = await delete_debtor(int(state_data["debtor_id"]), session)
+    if deleted_debtor == 200:
+        await callback.message.answer("Должник удален❌", reply_markup=main_kb())
+        await callback.message.delete()
+    await state.clear()
+
+
+@router.callback_query(F.data.startswith("debtorDeleteNo"))
+async def callback_add_loan_confirm(callback: CallbackQuery, state: FSMContext):
+
+    await callback.message.answer("Ладно, оставим его пока😎", reply_markup=main_kb())
+    await callback.message.delete()
+    await state.clear()
 

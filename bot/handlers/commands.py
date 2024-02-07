@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.db.models import User, Debtor, Loan
 from bot.keyboards import main_kb, add_debtor_kb
-from bot.utils.db import get_user, register_user, get_debtors
+from bot.utils.db import get_user, register_user, get_debtors, get_user_all_loans
 from aiogram import F
 
 router = Router(name="commands-router")
@@ -49,9 +49,14 @@ async def cmd_start(message: Message, session: AsyncSession, state: FSMContext):
 
 @router.message(F.text.lower() == "должники📃")
 async def add_debt(message: Message, session: AsyncSession, state: FSMContext):
+    total_debt = None
     await state.clear()
     telegram_id = message.from_user.id
+    loans = await get_user_all_loans(telegram_id=telegram_id, session=session)
     debtors = await get_debtors(creditor_id=telegram_id, session=session)
+
+    if loans not in [None, 0, []]:
+        total_debt = sum(loan.amount_of_debt for loan in loans)
 
     if debtors == 401:
         await message.answer("Вы не зарегистрированы. Используйте команду /start, чтобы начать пользоваться ботом")
@@ -59,10 +64,11 @@ async def add_debt(message: Message, session: AsyncSession, state: FSMContext):
 
     debtors_list = [{"name": d.full_name, "id": d.id} for d in debtors]
     if len(debtors) == 0:
-        await message.answer("Пока у вас нет должников. Хотите добавить первого?", reply_markup=add_debtor_kb())
+        await message.answer("Пока у вас нет должников. Хотите добавить первого?", reply_markup=add_debtor_kb(debtors_list))
         return
     elif len(debtors) != 0:
-        await message.answer(f"Вот ваши должники", reply_markup=add_debtor_kb(debtors_list))
+        await message.answer(f"Общая сумма ваших денег у других людей: <b>{0 if total_debt is None else total_debt}</b>\n\n"
+                             f"Вот ваши должники:", reply_markup=add_debtor_kb(debtors_list))
         return
     else:
         await message.answer("Ошибка")

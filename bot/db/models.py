@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, BigInteger, String, Float, Date, ForeignKey
+from sqlalchemy import Column, Integer, BigInteger, String, Float, Date, ForeignKey, Boolean
 
 # from bot.db.base import Base
 from sqlalchemy.orm import declarative_base, relationship
@@ -22,7 +22,7 @@ class Debtor(Base):
     full_name = Column(String, nullable=False)
     creditor_id = Column(BigInteger, ForeignKey("user.telegram_id"), nullable=False)
 
-    loans = relationship("Loan", back_populates="debtor", lazy="joined")
+    loans = relationship("Loan", back_populates="debtor", lazy="joined", cascade="all, delete")
     creditor = relationship("User", back_populates="debtors", lazy="joined")
 
 
@@ -34,6 +34,7 @@ class Loan(Base):
     subject_of_debt = Column(String, nullable=False)
     date_of_loan = Column(Date, nullable=False)
     end_date_of_loan = Column(Date, nullable=True)
+    is_debt_repaid = Column(Boolean, default=False)
     creditor_id = Column(BigInteger, ForeignKey("user.telegram_id"), nullable=False)
     debtor_id = Column(Integer, ForeignKey("debtor.id"), nullable=False)
 

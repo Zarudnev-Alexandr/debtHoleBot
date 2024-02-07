@@ -19,6 +19,11 @@ def main_kb():
 
 
 def add_debtor_kb(debtors_list):
+    if not debtors_list:
+        builder = InlineKeyboardBuilder()
+        builder.button(text="➕добавить➕", callback_data="debtor_add")
+        return builder.as_markup()
+
     builder = InlineKeyboardBuilder()
     for item in debtors_list:
         builder.button(
@@ -45,11 +50,15 @@ def debtor_kb(loans, debtor_id):
     builder = InlineKeyboardBuilder()
     builder.button(text="➕Добавить долг➕", callback_data=f"debtorAddLoan_{debtor_id}")
     if loans is None:
-        builder.adjust(1)
+        builder.button(text="🗑️Удалить должника🗑️", callback_data=f"debtorRemoveDebtor_{debtor_id}")
+        builder.button(text="⬅Назад⬅", callback_data=f"debtorBackToMain")
+        builder.adjust(2)
         return builder.as_markup()
 
     builder.button(text="➖Вычесть долг➖", callback_data=f"debtorRemoveLoan_{debtor_id}")
-    builder.button(text="❤Простить долг❤", callback_data=f"debtorForgiveLoan_{debtor_id}")
+    builder.button(text="❤Простить долги❤", callback_data=f"debtorForgiveLoan_{debtor_id}")
+    builder.button(text="🗑️Удалить должника🗑️", callback_data=f"debtorRemoveDebtor_{debtor_id}")
+    builder.button(text="⬅Назад⬅", callback_data=f"debtorBackToMain")
     builder.adjust(2)
     return builder.as_markup()
 
@@ -60,3 +69,28 @@ def add_loan_confirm_kb():
     builder.button(text="Заново🔄", callback_data="debtorAddLoanRewrite")
     builder.adjust(2)
     return builder.as_markup()
+
+
+def remove_loan_confirm_kb():
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Вычесть✅", callback_data="debtorRemoveLoanConfirm")
+    builder.button(text="Заново🔄", callback_data="debtorRemoveLoanRewrite")
+    builder.adjust(2)
+    return builder.as_markup()
+
+
+def forgive_loan_confirm_kb():
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🙏Прощаю🙏", callback_data="debtorForgiveLoanConfirm")
+    builder.button(text="💀Я жлоб💀", callback_data="debtorForgiveLoanNo")
+    builder.adjust(2)
+    return builder.as_markup()
+
+
+def delete_debtor_confirm_kb():
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🗑️Удаляем🗑️", callback_data="debtorDeleteConfirm")
+    builder.button(text="🥱Пусть остается🥱", callback_data="debtorDeleteNo")
+    builder.adjust(2)
+    return builder.as_markup()
+
