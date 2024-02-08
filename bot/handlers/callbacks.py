@@ -43,12 +43,12 @@ class DebtorForgiveLoanState(StatesGroup):
 
 @router.callback_query(F.data.startswith("debtorBackToMain"))
 async def back_to_main_callback_edit_text(callback: CallbackQuery, session: AsyncSession):
-    global total_debt
+    total_debt = 0
     telegram_id = callback.from_user.id
     loans = await get_user_all_loans(telegram_id=telegram_id, session=session)
     debtors = await get_debtors(creditor_id=telegram_id, session=session)
 
-    if loans not in [None, 0, []]:
+    if isinstance(loans, list) and len(loans) > 0:
         total_debt = sum(loan.amount_of_debt for loan in loans)
 
     if debtors == 401:
@@ -60,7 +60,7 @@ async def back_to_main_callback_edit_text(callback: CallbackQuery, session: Asyn
         await callback.message.edit_text("Пока у вас нет должников. Хотите добавить первого?", reply_markup=add_debtor_kb(debtors_list))
         return
     elif len(debtors) != 0:
-        await callback.message.edit_text(f"Общая сумма ваших денег у других людей: <b>{total_debt}</b>\n\n"
+        await callback.message.edit_text(f"Общая сумма ваших денег у других людей: <b>{0 if total_debt is None else total_debt}</b>\n\n"
                                          f"Вот ваши должники:", reply_markup=add_debtor_kb(debtors_list))
         return
     else:
@@ -181,7 +181,7 @@ async def process_simple_calendar(callback_query: CallbackQuery, callback_data: 
         calendar = SimpleCalendar(
             locale=await get_user_locale(callback_query.from_user), show_alerts=True
         )
-        calendar.set_dates_range(datetime(2022, 1, 1), datetime(2025, 12, 31))
+        calendar.set_dates_range(datetime(2010, 1, 1), datetime(2050, 12, 31))
         selected, date = await calendar.process_selection(callback_query, callback_data)
         if selected:
             await state.update_data(end_date_of_loan=date.strftime("%d/%m/%Y"))

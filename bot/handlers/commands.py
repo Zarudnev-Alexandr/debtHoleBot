@@ -55,7 +55,7 @@ async def add_debt(message: Message, session: AsyncSession, state: FSMContext):
     loans = await get_user_all_loans(telegram_id=telegram_id, session=session)
     debtors = await get_debtors(creditor_id=telegram_id, session=session)
 
-    if loans not in [None, 0, []]:
+    if isinstance(loans, list) and len(loans) > 0:
         total_debt = sum(loan.amount_of_debt for loan in loans)
 
     if debtors == 401:

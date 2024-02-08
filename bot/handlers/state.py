@@ -19,18 +19,28 @@ async def debtor_add_state_wating_for_fullanme(message: Message, state: FSMConte
     full_name = message.text.strip()
 
     if not full_name:
-        await message.answer("Пожалуйста, укажите корректное ФИО должника. Пустой ввод не допускается: ")
+        await message.answer("Пожалуйста, укажите корректное ФИО должника. Пустой ввод не допускается.")
         return
 
-    await state.update_data(fullname=message.text)
+    if len(full_name) > 100:
+        await message.answer("Длина введенного имени слишком большая. Пожалуйста, введите короткое имя. Максимум 100 символов.")
+        return
+
+    await state.update_data(fullname=full_name)
     await message.answer(text=f"Вы ввели: {full_name}. Все правильно?", reply_markup=confirm_debtor_fullname_kb())
+
 
 
 @router.message(DebtorAddLoanState.enter_amount, F.text)
 async def debtor_add_loan_enter_amount(message: Message, state: FSMContext):
     amount = message.text.strip()
+
     if not amount.isdigit():
         await message.answer("Указывать можно только целые числа.\n\n<b>Укажите размер долга:</b> ")
+        return
+
+    if len(amount) > 9:  
+        await message.answer("Размер долга слишком большой. Пожалуйста, укажите короткое значение.")
         return
 
     await state.update_data(amount=amount)
@@ -39,11 +49,16 @@ async def debtor_add_loan_enter_amount(message: Message, state: FSMContext):
     await state.set_state(DebtorAddLoanState.enter_subject)
 
 
+
 @router.message(DebtorAddLoanState.enter_subject, F.text)
 async def debtor_add_loan_enter_amount(message: Message, state: FSMContext):
     subject = message.text.strip()
     if not subject:
         await message.answer("Укажите причину долга: ")
+        return
+
+    if len(subject) > 100:
+        await message.answer("Длина введенного имени слишком большая. Пожалуйста, введите короткое имя. Максимум 100 символов.")
         return
 
     await state.update_data(subject=subject)
@@ -61,6 +76,10 @@ async def debtor_remove_loan_enter_amount(message: Message, state: FSMContext):
         if not remove_number.isdigit():
             await message.answer("Укажите, сколько вам вернули: ")
             return
+
+        if len(amount) > 9:
+          await message.answer("Слишком большое число. Вам не могут столько задолжать🤨")
+          return
 
         await state.update_data(amount_to_subtract=remove_number)
         await message.answer(text=f"Вам вернули <b>{remove_number}</b>. Все правильно?",

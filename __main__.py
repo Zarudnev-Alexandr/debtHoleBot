@@ -5,10 +5,13 @@ from aiogram.utils.callback_answer import CallbackAnswerMiddleware
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
-from bot.config_reader import config
+from config_reader import config
 from bot.handlers import commands, callbacks, state
 from bot.middlewares import DbSessionMiddleware
 # from bot.ui_commands import set_ui_commands
+import locale
+
+locale.setlocale(locale.LC_ALL,'en_US.UTF-8')
 
 
 async def main():
