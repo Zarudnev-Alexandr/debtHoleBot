@@ -77,7 +77,7 @@ async def debtor_remove_loan_enter_amount(message: Message, state: FSMContext):
             await message.answer("Укажите, сколько вам вернули: ")
             return
 
-        if len(amount) > 9:
+        if len(remove_number) > 9:
           await message.answer("Слишком большое число. Вам не могут столько задолжать🤨")
           return
 
